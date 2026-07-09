@@ -1,0 +1,14 @@
+.gradle/
+.kotlin/
+build/
+**/build/
+local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+*password*
+*credential*
+.codex-remote-attachments/
