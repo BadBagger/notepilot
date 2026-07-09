@@ -19,6 +19,8 @@
 
 ## Release State
 
-- Initial publish target: `v0.1.0-mvp`.
+- Initial release `v0.1.0-mvp` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.0-mvp` with `NotePilot.apk` and `NotePilot-release-v0.1.0-mvp.apk`.
+- APK certificate SHA-256: `d2210e7f1d9159b5df8088060e22cf76dd60f762e1d7b006cb196fced15a1b5a`.
+- DevHub onboarding release is `v2.1.51-notepilot`.
 - Release signing uses ignored local `keystore.properties` and a keystore outside the repo under `C:\Users\KyleB\.smithware\signing\com.smithware.notepilot\`.
 - Do not commit APKs, keystores, passwords, or local SDK paths.
