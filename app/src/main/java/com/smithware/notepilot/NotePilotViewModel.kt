@@ -57,12 +57,12 @@ class NotePilotViewModel(application: Application) : AndroidViewModel(applicatio
     fun format(raw: String): FormattedCapture = formatter.formatTranscript(raw, FormatContext())
     fun setQuery(value: String) { queryFlow.value = value }
 
-    fun saveFormatted(formatted: FormattedCapture, title: String, content: String, section: Section, dueAt: Long?) {
+    fun saveFormatted(formatted: FormattedCapture, title: String, content: String, section: Section, dueAt: Long?, reminderAt: Long?) {
         viewModelScope.launch {
-            val entity = formatted.toEntity(section = section, titleOverride = title, cleanedOverride = content, dueOverride = dueAt)
+            val entity = formatted.toEntity(section = section, titleOverride = title, cleanedOverride = content, dueOverride = dueAt, reminderOverride = reminderAt)
             repository.save(entity)
-            if (entity.type == CaptureType.ReminderDraft && entity.detectedDateTime != null) {
-                reminders.schedule(entity.id, entity.title, entity.detectedDateTime)
+            if (entity.type == CaptureType.ReminderDraft && entity.reminderDateTime != null) {
+                reminders.schedule(entity.id, entity.title, entity.reminderDateTime)
                 repository.markReminderScheduled(entity.id)
             }
             settingsStore.saveDraftTranscript("")

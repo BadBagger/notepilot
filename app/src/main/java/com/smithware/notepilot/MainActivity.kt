@@ -308,6 +308,7 @@ private fun ReviewDialog(formatted: FormattedCapture, viewModel: NotePilotViewMo
     var content by remember(formatted.rawTranscript) { mutableStateOf(formatted.cleanedText) }
     var section by remember { mutableStateOf(Section.Inbox) }
     var dueAt by remember(formatted.detectedDateTime) { mutableStateOf(formatted.detectedDateTime) }
+    var reminderAt by remember(formatted.reminderDateTime) { mutableStateOf(formatted.reminderDateTime) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Review before saving") },
@@ -323,10 +324,17 @@ private fun ReviewDialog(formatted: FormattedCapture, viewModel: NotePilotViewMo
                 if (formatted.type == CaptureType.ReminderDraft) {
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Due ${dueAt?.formatReminderTime() ?: "not set"}", fontWeight = FontWeight.Bold)
+                            Text("Deadline ${dueAt?.formatReminderTime() ?: "not set"}", fontWeight = FontWeight.Bold)
+                            Text("Reminder ${reminderAt?.formatReminderTime() ?: "off"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                AssistChip(onClick = { dueAt = System.currentTimeMillis() + 30 * 60_000L }, label = { Text("30 min") })
-                                AssistChip(onClick = { dueAt = System.currentTimeMillis() + 2 * 60 * 60_000L }, label = { Text("2 hours") })
+                                AssistChip(onClick = {
+                                    dueAt = System.currentTimeMillis() + 30 * 60_000L
+                                    reminderAt = null
+                                }, label = { Text("Due 30 min") })
+                                AssistChip(onClick = {
+                                    dueAt = System.currentTimeMillis() + 2 * 60 * 60_000L
+                                    reminderAt = dueAt?.minus(30 * 60_000L)
+                                }, label = { Text("Due 2h") })
                                 AssistChip(onClick = {
                                     dueAt = Calendar.getInstance().apply {
                                         add(Calendar.DAY_OF_YEAR, 1)
@@ -335,8 +343,11 @@ private fun ReviewDialog(formatted: FormattedCapture, viewModel: NotePilotViewMo
                                         set(Calendar.SECOND, 0)
                                         set(Calendar.MILLISECOND, 0)
                                     }.timeInMillis
+                                    reminderAt = dueAt?.minus(30 * 60_000L)
                                 }, label = { Text("Tomorrow 9") })
-                                AssistChip(onClick = { dueAt = null }, label = { Text("No reminder") })
+                                AssistChip(onClick = { reminderAt = dueAt?.minus(30 * 60_000L) }, label = { Text("Remind 30 min before") })
+                                AssistChip(onClick = { reminderAt = dueAt }, label = { Text("At deadline") })
+                                AssistChip(onClick = { reminderAt = null }, label = { Text("No notification") })
                             }
                         }
                     }
@@ -353,7 +364,7 @@ private fun ReviewDialog(formatted: FormattedCapture, viewModel: NotePilotViewMo
         },
         confirmButton = {
             Button(onClick = {
-                viewModel.saveFormatted(formatted, title, content, section, dueAt)
+                viewModel.saveFormatted(formatted, title, content, section, dueAt, reminderAt)
                 onDismiss()
             }) { Text("Save") }
         },
@@ -429,7 +440,8 @@ private fun CaptureCard(capture: CaptureEntity, viewModel: NotePilotViewModel) {
                 if (capture.pinned) Icon(Icons.Default.PushPin, "Pinned")
             }
             Text(capture.cleanedContent.ifBlank { capture.rawTranscript }, maxLines = 5, overflow = TextOverflow.Ellipsis)
-            if (capture.detectedDateTime != null) AssistChip(onClick = {}, label = { Text("Due ${capture.detectedDateTime.formatReminderTime()}") }, leadingIcon = { Icon(Icons.Default.Notifications, null) })
+            if (capture.detectedDateTime != null) AssistChip(onClick = {}, label = { Text("Deadline ${capture.detectedDateTime.formatReminderTime()}") }, leadingIcon = { Icon(Icons.Default.Notifications, null) })
+            if (capture.reminderDateTime != null) AssistChip(onClick = {}, label = { Text("Reminder ${capture.reminderDateTime.formatReminderTime()}") }, leadingIcon = { Icon(Icons.Default.Notifications, null) })
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconButton(onClick = { viewModel.pin(capture) }) { Icon(Icons.Default.PushPin, "Pin") }
                 IconButton(onClick = { viewModel.archive(capture) }) { Icon(Icons.Default.Archive, "Archive") }

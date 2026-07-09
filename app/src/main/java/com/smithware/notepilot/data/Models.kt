@@ -25,6 +25,7 @@ data class CaptureEntity(
     val completed: Boolean = false,
     val source: CaptureSource = CaptureSource.Voice,
     val detectedDateTime: Long? = null,
+    val reminderDateTime: Long? = null,
     val reminderScheduled: Boolean = false
 ) {
     val tagList: List<String> get() = tags.split("|").filter { it.isNotBlank() }
@@ -37,6 +38,7 @@ data class FormattedCapture(
     val cleanedText: String,
     val checklistItems: List<String> = emptyList(),
     val detectedDateTime: Long? = null,
+    val reminderDateTime: Long? = null,
     val detectedTags: List<String> = emptyList(),
     val confidenceScore: Float = 0.5f,
     val rawTranscript: String,
@@ -48,7 +50,8 @@ fun FormattedCapture.toEntity(
     source: CaptureSource = CaptureSource.Voice,
     titleOverride: String = title,
     cleanedOverride: String = cleanedText,
-    dueOverride: Long? = detectedDateTime
+    dueOverride: Long? = detectedDateTime,
+    reminderOverride: Long? = reminderDateTime
 ) = CaptureEntity(
     title = titleOverride.ifBlank { "Untitled capture" },
     cleanedContent = cleanedOverride,
@@ -58,5 +61,6 @@ fun FormattedCapture.toEntity(
     tags = detectedTags.joinToString("|"),
     checklistItems = checklistItems.joinToString("|"),
     source = source,
-    detectedDateTime = dueOverride
+    detectedDateTime = dueOverride,
+    reminderDateTime = reminderOverride
 )

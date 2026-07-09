@@ -14,6 +14,7 @@ class LocalRuleBasedFormatter : TranscriptFormatter {
         }
         val lower = raw.lowercase()
         val due = detectDateTime(lower, context.now)
+        val reminder = due?.let { detectReminderDateTime(lower, it) }
         val type = when {
             hasAny(lower, "shopping list", "grocery list") -> CaptureType.ShoppingList
             due != null || hasAny(lower, "remind me to", "don't forget", "dont forget", "later today", "tomorrow", "next week") -> CaptureType.ReminderDraft
@@ -37,7 +38,7 @@ class LocalRuleBasedFormatter : TranscriptFormatter {
         val warnings = buildList {
             if (type == CaptureType.ReminderDraft && due == null) add("Reminder wording was detected, but no date or time was recognized.")
         }
-        return FormattedCapture(title, type, cleaned, items.map { it.cleanItem() }, due, tags, confidence(type, items, due), raw, warnings)
+        return FormattedCapture(title, type, cleaned, items.map { it.cleanItem() }, due, reminder, tags, confidence(type, items, due), raw, warnings)
     }
 
     private fun extractItems(raw: String, type: CaptureType): List<String> {
@@ -47,6 +48,7 @@ class LocalRuleBasedFormatter : TranscriptFormatter {
             .replace(Regex("(?i)^grocery list"), "")
             .replace(Regex("(?i)^app idea[,]?"), "App idea:")
             .replace(Regex("(?i)i need to |remind me to |don't forget to |dont forget to |add task |i have to "), "")
+            .removeSchedulingPhrases()
             .trim(' ', '.', ',')
         val splitRegex = Regex("(?i)\\s+and also\\s+|\\s+and\\s+|,|;|\\n|\\.\\s+")
         val rough = if (type == CaptureType.ShoppingList && !lower.contains(" and ") && !raw.contains(",")) {
@@ -81,7 +83,7 @@ class LocalRuleBasedFormatter : TranscriptFormatter {
         CaptureType.ShoppingList -> "Shopping List"
         CaptureType.TodoList -> "To-do"
         CaptureType.Checklist -> "Checklist"
-        CaptureType.ReminderDraft -> items.firstOrNull()?.cleanItem()?.removePrefix("to ")?.cleanSentence() ?: "Reminder Draft"
+        CaptureType.ReminderDraft -> items.firstOrNull()?.cleanItem()?.removePrefix("to ")?.cleanSentence() ?: raw.removeSchedulingPhrases().cleanSentence().ifBlank { "Reminder Draft" }
         CaptureType.IdeaNote -> {
             val subject = Regex("(?i)(app idea|idea)[:,]?\\s*([^,.]+)").find(raw)?.groupValues?.getOrNull(2)?.trim()
             if (!subject.isNullOrBlank()) "App Idea: ${subject.cleanSentence()}" else "Idea Note"
@@ -91,6 +93,7 @@ class LocalRuleBasedFormatter : TranscriptFormatter {
 
     private fun detectDateTime(lower: String, now: Long): Long? {
         val cal = Calendar.getInstance().apply { timeInMillis = now; set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+        val timeMatch = Regex("\\b(?:at\\s+)?(\\d{1,2})(?::(\\d{2}))\\s*(am|pm)?\\b").find(lower)
         when {
             "later today" in lower -> cal.add(Calendar.HOUR_OF_DAY, 3)
             "tomorrow" in lower -> cal.add(Calendar.DAY_OF_YEAR, 1)
@@ -103,20 +106,39 @@ class LocalRuleBasedFormatter : TranscriptFormatter {
                 val add = ((target - current + 7) % 7).let { if (it == 0) 7 else it }
                 cal.add(Calendar.DAY_OF_YEAR, add)
             }
-            Regex("at \\d{1,2}").containsMatchIn(lower) -> Unit
+            timeMatch != null -> Unit
             else -> return null
         }
-        Regex("at (\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?").find(lower)?.let {
+        timeMatch?.let {
             var hour = it.groupValues[1].toInt()
             val minute = it.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
-            val meridiem = it.groupValues.getOrNull(3)
+            val meridiem = it.groupValues.getOrNull(3).orEmpty()
             if (meridiem == "pm" && hour < 12) hour += 12
             if (meridiem == "am" && hour == 12) hour = 0
             cal.set(Calendar.HOUR_OF_DAY, hour)
             cal.set(Calendar.MINUTE, minute)
+            if (meridiem.isBlank() && hour in 7..11 && cal.timeInMillis < now) {
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+            } else if (meridiem.isBlank() && hour !in 7..11 && cal.timeInMillis < now) {
+                cal.add(Calendar.HOUR_OF_DAY, 12)
+                if (cal.timeInMillis < now) cal.add(Calendar.DAY_OF_YEAR, 1)
+            } else if (meridiem.isNotBlank() && cal.timeInMillis < now) {
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+            }
         }
         if ("morning" in lower) cal.set(Calendar.HOUR_OF_DAY, 9)
         return cal.timeInMillis
+    }
+
+    private fun detectReminderDateTime(lower: String, due: Long): Long {
+        val minuteOffset = Regex("(\\d+)\\s*(?:minute|minutes|min)\\s*(?:before|prior|early|ahead)").find(lower)?.groupValues?.get(1)?.toLongOrNull()
+        val hourOffset = Regex("(\\d+)\\s*(?:hour|hours|hr|hrs)\\s*(?:before|prior|early|ahead)").find(lower)?.groupValues?.get(1)?.toLongOrNull()
+        val offsetMillis = when {
+            minuteOffset != null -> minuteOffset * 60_000L
+            hourOffset != null -> hourOffset * 60 * 60_000L
+            else -> 30 * 60_000L
+        }
+        return due - offsetMillis
     }
 
     private fun weekdayIndex(lower: String): Int? = listOf(
@@ -140,9 +162,13 @@ class LocalRuleBasedFormatter : TranscriptFormatter {
             .replace(Regex("(?i)^should\\s+have\\s+a\\s+"), "")
             .replace(Regex("(?i)^turn\\s+speech\\s+into\\s+"), "Turns speech into ")
             .replace(Regex("(?i)^maybe\\s+call\\s+it\\s+"), "Possible name: ")
+            .removeSchedulingPhrases()
         return cleaned.replaceFirstChar { it.titlecase(Locale.getDefault()) }
     }
     private fun String.cleanSentence() = trim().replaceFirstChar { it.titlecase(Locale.getDefault()) }
+    private fun String.removeSchedulingPhrases() = replace(Regex("(?i)\\b(?:at\\s+)?\\d{1,2}:\\d{2}\\s*(?:am|pm)?\\b"), "")
+        .replace(Regex("(?i)\\b(?:with\\s+)?(?:a\\s+)?reminder\\s+\\d+\\s*(?:minutes?|mins?|hours?|hrs?)\\s*(?:before|prior|early|ahead)\\b"), "")
+        .replace(Regex("(?i)\\b\\d+\\s*(?:minutes?|mins?|hours?|hrs?)\\s*(?:before|prior|early|ahead)\\b"), "")
 }
 
 fun Long.formatReminderTime(): String = SimpleDateFormat("EEE, MMM d h:mm a", Locale.getDefault()).format(this)
