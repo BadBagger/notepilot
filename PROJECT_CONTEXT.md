@@ -19,7 +19,9 @@
 
 ## Release State
 
-- Latest release `v0.1.1-deadline-reminders` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.1-deadline-reminders` with `NotePilot.apk` and `NotePilot-release-v0.1.1-deadline-reminders.apk`.
+- Latest release `v0.1.2-compact-cards` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.2-compact-cards` with `NotePilot.apk` and `NotePilot-release-v0.1.2-compact-cards.apk`.
+- `v0.1.2-compact-cards` makes capture cards denser by reducing padding, limiting previews to two lines, replacing visible text actions with icons, and moving section routing chips into an overflow menu.
+- `v0.1.1-deadline-reminders` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.1-deadline-reminders`.
 - Initial release `v0.1.0-mvp` was published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.0-mvp`.
 - `v0.1.1-deadline-reminders` separates detected deadlines from notification times, defaults reminders to 30 minutes before detected deadlines, recognizes explicit prior offsets, and adds a Room migration for saved reminder timestamps.
 - APK certificate SHA-256: `d2210e7f1d9159b5df8088060e22cf76dd60f762e1d7b006cb196fced15a1b5a`.
