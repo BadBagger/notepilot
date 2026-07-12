@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Note
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PushPin
@@ -53,6 +54,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -430,29 +433,44 @@ private fun CaptureListScreen(title: String, captures: List<CaptureEntity>, quer
 
 @Composable
 private fun CaptureCard(capture: CaptureEntity, viewModel: NotePilotViewModel) {
+    var showMoveMenu by remember { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(capture.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${capture.type}  ${dateLabel(capture.updatedAt)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${capture.type}  ${dateLabel(capture.updatedAt)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (capture.pinned) Icon(Icons.Default.PushPin, "Pinned")
             }
-            Text(capture.cleanedContent.ifBlank { capture.rawTranscript }, maxLines = 5, overflow = TextOverflow.Ellipsis)
-            if (capture.detectedDateTime != null) AssistChip(onClick = {}, label = { Text("Deadline ${capture.detectedDateTime.formatReminderTime()}") }, leadingIcon = { Icon(Icons.Default.Notifications, null) })
-            if (capture.reminderDateTime != null) AssistChip(onClick = {}, label = { Text("Reminder ${capture.reminderDateTime.formatReminderTime()}") }, leadingIcon = { Icon(Icons.Default.Notifications, null) })
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(onClick = { viewModel.pin(capture) }) { Icon(Icons.Default.PushPin, "Pin") }
-                IconButton(onClick = { viewModel.archive(capture) }) { Icon(Icons.Default.Archive, "Archive") }
-                IconButton(onClick = { viewModel.delete(capture) }) { Icon(Icons.Default.Delete, "Delete") }
-                IconButton(onClick = { viewModel.complete(capture) }) { Icon(Icons.Default.CheckCircle, "Complete") }
-                TextButton(onClick = { viewModel.convertToChecklist(capture) }) { Text("Checklist") }
-                TextButton(onClick = { viewModel.convertTranscriptToTasks(capture) }) { Text("Tasks") }
+            Text(capture.cleanedContent.ifBlank { capture.rawTranscript }, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (capture.detectedDateTime != null || capture.reminderDateTime != null) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (capture.detectedDateTime != null) AssistChip(onClick = {}, label = { Text("Due ${capture.detectedDateTime.formatReminderTime()}") }, leadingIcon = { Icon(Icons.Default.Notifications, null) })
+                    if (capture.reminderDateTime != null) AssistChip(onClick = {}, label = { Text("Alert ${capture.reminderDateTime.formatReminderTime()}") })
+                }
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(Section.Notes, Section.Tasks, Section.Lists, Section.Ideas, Section.Archive).forEach {
-                    AssistChip(onClick = { viewModel.move(capture, it) }, label = { Text(it.name) })
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { viewModel.pin(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.PushPin, "Pin") }
+                IconButton(onClick = { viewModel.archive(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Archive, "Archive") }
+                IconButton(onClick = { viewModel.delete(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Delete, "Delete") }
+                IconButton(onClick = { viewModel.complete(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.CheckCircle, "Complete") }
+                IconButton(onClick = { viewModel.convertToChecklist(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.List, "Convert to checklist") }
+                IconButton(onClick = { viewModel.convertTranscriptToTasks(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Task, "Convert to tasks") }
+                Spacer(Modifier.weight(1f))
+                Box {
+                    IconButton(onClick = { showMoveMenu = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.MoreVert, "Move") }
+                    DropdownMenu(expanded = showMoveMenu, onDismissRequest = { showMoveMenu = false }) {
+                        listOf(Section.Notes, Section.Tasks, Section.Lists, Section.Ideas, Section.Archive).forEach {
+                            DropdownMenuItem(
+                                text = { Text("Move to ${it.name}") },
+                                onClick = {
+                                    showMoveMenu = false
+                                    viewModel.move(capture, it)
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }

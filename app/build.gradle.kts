@@ -21,8 +21,8 @@ android {
         applicationId = "com.smithware.notepilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1-deadline-reminders"
+        versionCode = 3
+        versionName = "0.1.2-compact-cards"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
