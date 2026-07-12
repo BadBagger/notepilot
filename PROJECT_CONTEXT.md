@@ -19,7 +19,9 @@
 
 ## Release State
 
-- Latest release `v0.1.2-compact-cards` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.2-compact-cards` with `NotePilot.apk` and `NotePilot-release-v0.1.2-compact-cards.apk`.
+- Latest release `v0.1.3-edit-actions` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.3-edit-actions` with `NotePilot.apk` and `NotePilot-release-v0.1.3-edit-actions.apk`.
+- `v0.1.3-edit-actions` adds editing for existing notes and replaces unclear card icons with a labeled More menu for pin, complete, convert, move, archive, and delete actions.
+- `v0.1.2-compact-cards` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.2-compact-cards`.
 - `v0.1.2-compact-cards` makes capture cards denser by reducing padding, limiting previews to two lines, replacing visible text actions with icons, and moving section routing chips into an overflow menu.
 - `v0.1.1-deadline-reminders` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.1-deadline-reminders`.
 - Initial release `v0.1.0-mvp` was published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.0-mvp`.
