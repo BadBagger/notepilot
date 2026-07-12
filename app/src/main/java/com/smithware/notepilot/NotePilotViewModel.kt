@@ -90,6 +90,15 @@ class NotePilotViewModel(application: Application) : AndroidViewModel(applicatio
     fun complete(capture: CaptureEntity) = viewModelScope.launch { repository.complete(capture) }
     fun move(capture: CaptureEntity, section: Section) = viewModelScope.launch { repository.move(capture, section) }
 
+    fun updateCapture(capture: CaptureEntity, title: String, content: String, type: CaptureType) = viewModelScope.launch {
+        val items = if (type in setOf(CaptureType.Checklist, CaptureType.TodoList, CaptureType.ShoppingList)) {
+            content.lines().map { it.trim().trimStart('-', ' ') }.filter { it.isNotBlank() }
+        } else {
+            emptyList()
+        }
+        repository.update(capture, title.ifBlank { "Untitled capture" }, content, type, items)
+    }
+
     fun convertToChecklist(capture: CaptureEntity) = viewModelScope.launch {
         val items = capture.cleanedContent.lines().map { it.trim().trimStart('-', ' ') }.filter { it.isNotBlank() }
         repository.update(capture, capture.title, items.joinToString("\n") { "- $it" }, CaptureType.Checklist, items)

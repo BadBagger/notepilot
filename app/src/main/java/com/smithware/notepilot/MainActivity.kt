@@ -433,7 +433,8 @@ private fun CaptureListScreen(title: String, captures: List<CaptureEntity>, quer
 
 @Composable
 private fun CaptureCard(capture: CaptureEntity, viewModel: NotePilotViewModel) {
-    var showMoveMenu by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
+    var editCapture by remember { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -450,31 +451,67 @@ private fun CaptureCard(capture: CaptureEntity, viewModel: NotePilotViewModel) {
                     if (capture.reminderDateTime != null) AssistChip(onClick = {}, label = { Text("Alert ${capture.reminderDateTime.formatReminderTime()}") })
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { viewModel.pin(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.PushPin, "Pin") }
-                IconButton(onClick = { viewModel.archive(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Archive, "Archive") }
-                IconButton(onClick = { viewModel.delete(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Delete, "Delete") }
-                IconButton(onClick = { viewModel.complete(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.CheckCircle, "Complete") }
-                IconButton(onClick = { viewModel.convertToChecklist(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.List, "Convert to checklist") }
-                IconButton(onClick = { viewModel.convertTranscriptToTasks(capture) }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Task, "Convert to tasks") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = { editCapture = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
+                    Text(" Edit")
+                }
                 Spacer(Modifier.weight(1f))
                 Box {
-                    IconButton(onClick = { showMoveMenu = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.MoreVert, "Move") }
-                    DropdownMenu(expanded = showMoveMenu, onDismissRequest = { showMoveMenu = false }) {
-                        listOf(Section.Notes, Section.Tasks, Section.Lists, Section.Ideas, Section.Archive).forEach {
-                            DropdownMenuItem(
-                                text = { Text("Move to ${it.name}") },
-                                onClick = {
-                                    showMoveMenu = false
-                                    viewModel.move(capture, it)
-                                }
-                            )
+                    Button(onClick = { showMoreMenu = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+                        Text("More")
+                        Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                        DropdownMenuItem(text = { Text(if (capture.pinned) "Unpin note" else "Pin note") }, leadingIcon = { Icon(Icons.Default.PushPin, null) }, onClick = { showMoreMenu = false; viewModel.pin(capture) })
+                        DropdownMenuItem(text = { Text(if (capture.completed) "Mark not done" else "Mark done") }, leadingIcon = { Icon(Icons.Default.CheckCircle, null) }, onClick = { showMoreMenu = false; viewModel.complete(capture) })
+                        DropdownMenuItem(text = { Text("Convert to checklist") }, leadingIcon = { Icon(Icons.Default.List, null) }, onClick = { showMoreMenu = false; viewModel.convertToChecklist(capture) })
+                        DropdownMenuItem(text = { Text("Convert transcript to tasks") }, leadingIcon = { Icon(Icons.Default.Task, null) }, onClick = { showMoreMenu = false; viewModel.convertTranscriptToTasks(capture) })
+                        listOf(Section.Notes, Section.Tasks, Section.Lists, Section.Ideas).forEach {
+                            DropdownMenuItem(text = { Text("Move to ${it.name}") }, onClick = { showMoreMenu = false; viewModel.move(capture, it) })
                         }
+                        DropdownMenuItem(text = { Text("Archive") }, leadingIcon = { Icon(Icons.Default.Archive, null) }, onClick = { showMoreMenu = false; viewModel.archive(capture) })
+                        DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { showMoreMenu = false; viewModel.delete(capture) })
                     }
                 }
             }
         }
     }
+    if (editCapture) EditCaptureDialog(capture, viewModel, onDismiss = { editCapture = false })
+}
+
+@Composable
+private fun EditCaptureDialog(capture: CaptureEntity, viewModel: NotePilotViewModel, onDismiss: () -> Unit) {
+    var title by remember(capture.id) { mutableStateOf(capture.title) }
+    var content by remember(capture.id) { mutableStateOf(capture.cleanedContent) }
+    var type by remember(capture.id) { mutableStateOf(capture.type) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit note") },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item { OutlinedTextField(title, { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(content, { content = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth(), minLines = 5) }
+                item {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CaptureType.entries.forEach {
+                            FilterChip(selected = type == it, onClick = { type = it }, label = { Text(it.name) })
+                        }
+                    }
+                }
+                item {
+                    Text("Raw transcript is preserved", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                viewModel.updateCapture(capture, title, content, type)
+                onDismiss()
+            }) { Text("Save changes") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

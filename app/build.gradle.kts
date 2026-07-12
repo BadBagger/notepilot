@@ -21,8 +21,8 @@ android {
         applicationId = "com.smithware.notepilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.2-compact-cards"
+        versionCode = 4
+        versionName = "0.1.3-edit-actions"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
