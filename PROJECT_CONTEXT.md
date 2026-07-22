@@ -19,7 +19,8 @@
 
 ## Release State
 
-- Latest release `v0.1.3-edit-actions` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.3-edit-actions` with `NotePilot.apk` and `NotePilot-release-v0.1.3-edit-actions.apk`.
+- Latest release `v0.1.4-ai-thought-dump` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.4-ai-thought-dump` with `NotePilot.apk` and `NotePilot-release-v0.1.4-ai-thought-dump.apk`.
+- `v0.1.4-ai-thought-dump` publishes the opt-in AI thought-dump branch work. AI formatting is off by default, requires the user to enter their own Anthropic API key, falls back to local formatting on failure, and excludes the settings DataStore from Android backup/transfer.
 - `v0.1.3-edit-actions` adds editing for existing notes and replaces unclear card icons with a labeled More menu for pin, complete, convert, move, archive, and delete actions.
 - `v0.1.2-compact-cards` is published at `https://github.com/BadBagger/notepilot/releases/tag/v0.1.2-compact-cards`.
 - `v0.1.2-compact-cards` makes capture cards denser by reducing padding, limiting previews to two lines, replacing visible text actions with icons, and moving section routing chips into an overflow menu.
