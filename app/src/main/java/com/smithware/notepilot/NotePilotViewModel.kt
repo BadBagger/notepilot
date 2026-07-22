@@ -18,10 +18,13 @@ import com.smithware.notepilot.format.FormatContext
 import com.smithware.notepilot.format.LocalRuleBasedFormatter
 import com.smithware.notepilot.notifications.ReminderScheduler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -41,6 +44,8 @@ data class NotePilotState(
     }
 }
 
+data class CategorizeProgress(val total: Int, val done: Int, val failed: Int, val running: Boolean)
+
 class NotePilotViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as NotePilotApp
     private val repository: NotePilotRepository = app.repository
@@ -49,6 +54,9 @@ class NotePilotViewModel(application: Application) : AndroidViewModel(applicatio
     private val reminders: ReminderScheduler = app.reminderScheduler
 
     private val queryFlow = kotlinx.coroutines.flow.MutableStateFlow("")
+
+    private val _categorizeProgress = MutableStateFlow<CategorizeProgress?>(null)
+    val categorizeProgress: StateFlow<CategorizeProgress?> = _categorizeProgress.asStateFlow()
 
     val state: StateFlow<NotePilotState> = combine(
         repository.captures,
@@ -171,4 +179,40 @@ class NotePilotViewModel(application: Application) : AndroidViewModel(applicatio
     fun setAnthropicApiKey(value: String) = viewModelScope.launch { settingsStore.setAnthropicApiKey(value) }
     fun setOpenAiApiKey(value: String) = viewModelScope.launch { settingsStore.setOpenAiApiKey(value) }
     fun testNotification() = reminders.showTestNotification()
+
+    /**
+     * Backfills a topic category onto every saved capture that predates AI
+     * thought-dump (or was captured via local rules, which never categorize).
+     * One capture at a time -- not batched into a single giant prompt -- so a
+     * failure on any one note just gets skipped rather than losing the whole
+     * run, and progress can update live as each one finishes.
+     */
+    fun categorizeExistingNotes() = viewModelScope.launch {
+        if (_categorizeProgress.value?.running == true) return@launch // already running
+        val settings = state.value.settings
+        if (!settings.aiThoughtDumpEnabled || settings.activeApiKey.isBlank()) return@launch
+
+        val targets = state.value.captures.filter { it.category.isBlank() }
+        if (targets.isEmpty()) {
+            _categorizeProgress.value = CategorizeProgress(total = 0, done = 0, failed = 0, running = false)
+            return@launch
+        }
+
+        _categorizeProgress.value = CategorizeProgress(total = targets.size, done = 0, failed = 0, running = true)
+        for (capture in targets) {
+            val noteText = "${capture.title}\n${capture.cleanedContent.ifBlank { capture.rawTranscript }}"
+            try {
+                val category = withContext(Dispatchers.IO) {
+                    app.cloudAiFormatter.categorize(noteText, settings.aiProvider, settings.activeApiKey)
+                }
+                if (category.isNotBlank()) {
+                    repository.update(capture, capture.title, capture.cleanedContent, capture.type, capture.itemList, category)
+                }
+                _categorizeProgress.update { it?.copy(done = it.done + 1) }
+            } catch (e: CloudAiFormatterException) {
+                _categorizeProgress.update { it?.copy(done = it.done + 1, failed = it.failed + 1) }
+            }
+        }
+        _categorizeProgress.update { it?.copy(running = false) }
+    }
 }

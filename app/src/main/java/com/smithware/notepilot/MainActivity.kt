@@ -64,6 +64,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFloatingActionButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -680,6 +681,8 @@ private fun EditCaptureDialog(capture: CaptureEntity, viewModel: NotePilotViewMo
 
 @Composable
 private fun SettingsScreen(state: NotePilotState, viewModel: NotePilotViewModel) {
+    val categorizeProgress by viewModel.categorizeProgress.collectAsState()
+    val uncategorizedCount = remember(state.captures) { state.captures.count { it.category.isBlank() } }
     val provider = state.settings.aiProvider
     val savedKeyForProvider = if (provider == AiProvider.OPENAI) state.settings.openAiApiKey else state.settings.anthropicApiKey
     // Keyed on the provider too, not just the saved value -- switching providers must show
@@ -753,6 +756,49 @@ private fun SettingsScreen(state: NotePilotState, viewModel: NotePilotViewModel)
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            }
+        }
+        if (state.settings.aiThoughtDumpEnabled && state.settings.activeApiKey.isNotBlank()) {
+            item {
+                Card {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Categorize existing notes", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Backfills a topic category onto notes saved before AI thought-dump existed, " +
+                                "one at a time, using your configured provider above.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        when {
+                            categorizeProgress?.running == true -> {
+                                val p = categorizeProgress!!
+                                LinearProgressIndicator(progress = { if (p.total == 0) 0f else p.done / p.total.toFloat() }, modifier = Modifier.fillMaxWidth())
+                                Text("Categorizing... ${p.done}/${p.total}" + if (p.failed > 0) " (${p.failed} failed)" else "", style = MaterialTheme.typography.bodySmall)
+                            }
+                            categorizeProgress != null && categorizeProgress?.running == false -> {
+                                val p = categorizeProgress!!
+                                Text(
+                                    if (p.total == 0) "Nothing to categorize -- every note already has one."
+                                    else "Done: ${p.done - p.failed}/${p.total} categorized" + if (p.failed > 0) ", ${p.failed} failed" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            else -> {
+                                Text(
+                                    if (uncategorizedCount > 0) "$uncategorizedCount note(s) without a category." else "Every note already has a category.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = { viewModel.categorizeExistingNotes() },
+                            enabled = categorizeProgress?.running != true && uncategorizedCount > 0,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Categorize $uncategorizedCount note(s)") }
                     }
                 }
             }

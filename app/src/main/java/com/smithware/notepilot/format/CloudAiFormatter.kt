@@ -31,20 +31,43 @@ class CloudAiFormatter {
 
     fun formatThoughtDump(rawTranscript: String, provider: AiProvider, apiKey: String): List<FormattedCapture> {
         val responseText = when (provider) {
-            AiProvider.OPENAI -> postToOpenAi(rawTranscript, apiKey)
-            AiProvider.ANTHROPIC -> postToAnthropic(rawTranscript, apiKey)
+            AiProvider.OPENAI -> postToOpenAi(SYSTEM_PROMPT, rawTranscript, apiKey)
+            AiProvider.ANTHROPIC -> postToAnthropic(SYSTEM_PROMPT, rawTranscript, apiKey)
         }
         return parseCaptures(responseText, rawTranscript)
     }
 
+    /**
+     * Assigns just a topic category to a single already-saved note -- the backfill
+     * counterpart to formatThoughtDump's per-entry category, for notes captured
+     * before AI thought-dump existed (or via local rules, which don't categorize
+     * at all). Same category vocabulary/guidance as the main prompt, just a much
+     * shorter response since there's no splitting or field extraction to do.
+     */
+    fun categorize(noteText: String, provider: AiProvider, apiKey: String): String {
+        val responseText = when (provider) {
+            AiProvider.OPENAI -> postToOpenAi(CATEGORIZE_SYSTEM_PROMPT, noteText, apiKey)
+            AiProvider.ANTHROPIC -> postToAnthropic(CATEGORIZE_SYSTEM_PROMPT, noteText, apiKey)
+        }
+        val parsed = try {
+            // extractJsonArray only strips a possible ```json fence despite the name --
+            // shared with formatThoughtDump's array response, works the same for this
+            // single JSON object.
+            JSONObject(extractJsonArray(responseText))
+        } catch (e: Exception) {
+            throw CloudAiFormatterException("Could not parse categorize response: ${e.message}", e)
+        }
+        return parsed.optString("category", "").trim()
+    }
+
     // ---- Anthropic -------------------------------------------------------
 
-    private fun postToAnthropic(rawTranscript: String, apiKey: String): String {
+    private fun postToAnthropic(systemPrompt: String, userText: String, apiKey: String): String {
         val body = JSONObject()
             .put("model", "claude-haiku-4-5-20251001")
             .put("max_tokens", 2048)
-            .put("system", SYSTEM_PROMPT)
-            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", rawTranscript)))
+            .put("system", systemPrompt)
+            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", userText)))
 
         val connection = try {
             URL(ANTHROPIC_MESSAGES_URL).openConnection() as HttpsURLConnection
@@ -87,10 +110,10 @@ class CloudAiFormatter {
 
     // ---- OpenAI -----------------------------------------------------------
 
-    private fun postToOpenAi(rawTranscript: String, apiKey: String): String {
+    private fun postToOpenAi(systemPrompt: String, userText: String, apiKey: String): String {
         val messages = JSONArray()
-            .put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
-            .put(JSONObject().put("role", "user").put("content", rawTranscript))
+            .put(JSONObject().put("role", "system").put("content", systemPrompt))
+            .put(JSONObject().put("role", "user").put("content", userText))
         val body = JSONObject()
             .put("model", "gpt-4o-mini")
             .put("max_tokens", 2048)
@@ -214,6 +237,21 @@ class CloudAiFormatter {
     companion object {
         private const val ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
         private const val OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+
+        private val CATEGORIZE_SYSTEM_PROMPT = """
+            You classify what a single saved note is actually ABOUT by its real meaning and intent,
+            not just surface keywords. For example, "I need to work on Claude's usage app tracker" is
+            about building or planning a piece of software, so its category should be something like
+            "App Ideas" -- even though the note never says "app idea" or "software" outright.
+
+            Pick ONE short, Title Case category (1-3 words) that best names what the note is about.
+            Common examples: "Work", "App Ideas", "Personal", "Errands", "Shopping", "Finance",
+            "Health", "Home". These are only illustrative starting points, not a fixed list -- if the
+            note is clearly about something these don't fit well, invent a short, clear Title Case
+            category of your own rather than forcing a bad fit.
+
+            Respond with ONLY a JSON object (no markdown fences, no explanation): {"category": "..."}
+        """.trimIndent()
 
         private val SYSTEM_PROMPT = """
             You split a rambling, stream-of-consciousness voice transcript into separate, distinct notes.
