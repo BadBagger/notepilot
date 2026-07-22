@@ -82,17 +82,26 @@ class CloudAiFormatter {
         }
     }
 
+    // Wraps the ENTIRE array-processing pass (not just JSONArray construction) so a
+    // structurally-valid-but-schema-deviating response -- e.g. the model returns an
+    // array of strings instead of objects, or an "items"/"tags" array containing a
+    // non-string element -- still surfaces as CloudAiFormatterException instead of a
+    // raw org.json.JSONException escaping uncaught into the caller's coroutine and
+    // crashing the app, which would defeat the whole point of the documented
+    // catch-and-fall-back-to-local-rules contract.
     private fun parseCaptures(responseText: String, fullDumpTranscript: String): List<FormattedCapture> {
-        val array = try {
-            JSONArray(extractJsonArray(responseText))
+        try {
+            val array = JSONArray(extractJsonArray(responseText))
+            if (array.length() == 0) {
+                throw CloudAiFormatterException("AI response produced zero captures")
+            }
+            val single = array.length() == 1
+            return (0 until array.length()).map { i -> toFormattedCapture(array.getJSONObject(i), fullDumpTranscript, single) }
+        } catch (e: CloudAiFormatterException) {
+            throw e
         } catch (e: Exception) {
-            throw CloudAiFormatterException("Could not parse AI response as JSON: ${e.message}", e)
+            throw CloudAiFormatterException("Could not parse AI response: ${e.message}", e)
         }
-        if (array.length() == 0) {
-            throw CloudAiFormatterException("AI response produced zero captures")
-        }
-        val single = array.length() == 1
-        return (0 until array.length()).map { i -> toFormattedCapture(array.getJSONObject(i), fullDumpTranscript, single) }
     }
 
     /**
@@ -108,8 +117,12 @@ class CloudAiFormatter {
      */
     private fun toFormattedCapture(obj: JSONObject, fullDumpTranscript: String, single: Boolean): FormattedCapture {
         val type = parseType(obj.optString("type", "PlainNote"))
-        val items = obj.optJSONArray("items")?.toStringList().orEmpty()
-        val tags = obj.optJSONArray("tags")?.toStringList().orEmpty().toMutableList()
+        // CaptureEntity stores tags/checklist items pipe-delimited with no escaping
+        // (see toEntity() in Models.kt) -- fine for the fixed, hand-picked literal
+        // tags LocalRuleBasedFormatter uses, but these come from an LLM, so strip any
+        // stray "|" defensively rather than risk one tag silently splitting into two.
+        val items = obj.optJSONArray("items")?.toStringList()?.map { it.replace("|", "/") }.orEmpty()
+        val tags = obj.optJSONArray("tags")?.toStringList()?.map { it.replace("|", "/") }.orEmpty().toMutableList()
         if (obj.optBoolean("workRelated", false) && tags.none { it.equals("work", ignoreCase = true) }) {
             tags.add("work")
         }
