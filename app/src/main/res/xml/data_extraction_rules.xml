@@ -2,7 +2,7 @@
 <!-- Android 12+ (API 31+) backup/transfer rules. Excludes the DataStore
      preferences file, which holds the user's Anthropic API key alongside
      ordinary app settings, from both cloud backup and device-to-device
-     transfer -- a secret shouldn't leave the device via either path. -->
+     transfer. A secret should not leave the device via either path. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="datastore/settings.preferences_pb" />

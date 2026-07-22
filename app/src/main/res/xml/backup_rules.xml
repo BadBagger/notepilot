@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Pre-Android 12 (API 26-30) full-backup rules -- same exclusion as
+<!-- Pre-Android 12 (API 26-30) full backup rules. Same exclusion as
      data_extraction_rules.xml, in the older format Auto Backup still
      reads on those OS versions. -->
 <full-backup-content>
