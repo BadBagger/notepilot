@@ -21,8 +21,8 @@ android {
         applicationId = "com.smithware.notepilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.1.4-ai-thought-dump"
+        versionCode = 6
+        versionName = "0.1.5-multi-provider-categorization"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
