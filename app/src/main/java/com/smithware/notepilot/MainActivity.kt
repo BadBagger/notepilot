@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -162,8 +163,8 @@ fun NotePilotRoot(viewModel: NotePilotViewModel = viewModel()) {
             Surface(Modifier.fillMaxSize().padding(padding)) {
                 when (screen) {
                     Screen.Capture -> CaptureScreen(state, viewModel, snackbar)
-                    Screen.Inbox -> CaptureListScreen("Inbox", state.filtered.filter { it.section == Section.Inbox && !it.archived }, state.query, viewModel)
-                    Screen.Notes -> CaptureListScreen("Notes", state.filtered.filter { it.section == Section.Notes || it.type in setOf(CaptureType.PlainNote, CaptureType.IdeaNote) && !it.archived }, state.query, viewModel)
+                    Screen.Inbox -> CaptureListScreen("Inbox", state.filtered.filter { it.section == Section.Inbox && !it.archived }, state.query, viewModel, showWorkFilter = true)
+                    Screen.Notes -> CaptureListScreen("Notes", state.filtered.filter { it.section == Section.Notes || it.type in setOf(CaptureType.PlainNote, CaptureType.IdeaNote) && !it.archived }, state.query, viewModel, showWorkFilter = true)
                     Screen.Tasks -> CaptureListScreen("Tasks", state.filtered.filter { it.type in setOf(CaptureType.TodoList, CaptureType.ReminderDraft) && !it.archived }, state.query, viewModel)
                     Screen.Lists -> CaptureListScreen("Lists", state.filtered.filter { it.type in setOf(CaptureType.Checklist, CaptureType.ShoppingList) && !it.archived }, state.query, viewModel)
                     Screen.Archive -> CaptureListScreen("Archive", state.filtered.filter { it.archived || it.section == Section.Archive }, state.query, viewModel)
@@ -183,6 +184,9 @@ private fun CaptureScreen(state: NotePilotState, viewModel: NotePilotViewModel, 
     var speechError by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf<FormattedCapture?>(null) }
     var typedDialog by remember { mutableStateOf(false) }
+    var thoughtDumpMode by remember { mutableStateOf(false) }
+    var thoughtDumpProcessing by remember { mutableStateOf(false) }
+    var thoughtDumpDrafts by remember { mutableStateOf<List<FormattedCapture>?>(null) }
     val audioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) scope.launch { snackbar.showSnackbar("Microphone permission denied. Typed capture is available.") }
     }
@@ -206,7 +210,17 @@ private fun CaptureScreen(state: NotePilotState, viewModel: NotePilotViewModel, 
                 listening = false
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 liveText = text
-                if (text.isNotBlank()) draft = viewModel.format(text)
+                if (text.isBlank()) return
+                if (thoughtDumpMode) {
+                    thoughtDumpMode = false
+                    thoughtDumpProcessing = true
+                    scope.launch {
+                        thoughtDumpDrafts = viewModel.formatThoughtDump(text)
+                        thoughtDumpProcessing = false
+                    }
+                } else {
+                    draft = viewModel.format(text)
+                }
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 liveText = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
@@ -226,7 +240,7 @@ private fun CaptureScreen(state: NotePilotState, viewModel: NotePilotViewModel, 
         if (liveText.isNotBlank()) viewModel.saveDraftTranscript(liveText)
     }
 
-    fun startListening() {
+    fun startListening(forThoughtDump: Boolean = false) {
         if (!recognizerAvailable || recognizer == null) {
             speechError = "Speech recognition is not available on this device. Use typed capture."
             typedDialog = true
@@ -239,11 +253,12 @@ private fun CaptureScreen(state: NotePilotState, viewModel: NotePilotViewModel, 
         liveText = ""
         speechError = null
         draft = null
+        thoughtDumpMode = forThoughtDump
         listening = true
         recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak naturally")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, if (forThoughtDump) "Dump your thoughts -- I'll sort them out" else "Speak naturally")
         })
     }
 
@@ -273,6 +288,20 @@ private fun CaptureScreen(state: NotePilotState, viewModel: NotePilotViewModel, 
                 Button(onClick = { typedDialog = true }) { Icon(Icons.Default.Edit, null); Text(" Typed note") }
                 Button(onClick = { typedDialog = true }) { Icon(Icons.Default.List, null); Text(" Checklist") }
                 Button(onClick = { typedDialog = true }) { Icon(Icons.Default.Notifications, null); Text(" Reminder") }
+                Button(onClick = { startListening(forThoughtDump = true) }) {
+                    Icon(Icons.Default.Lightbulb, null)
+                    Text(" Thought dump")
+                }
+            }
+        }
+        if (thoughtDumpProcessing) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Text("Sorting your thought dump into notes…")
+                    }
+                }
             }
         }
         if (liveText.isNotBlank() || speechError != null) {
@@ -303,6 +332,94 @@ private fun CaptureScreen(state: NotePilotState, viewModel: NotePilotViewModel, 
 
     draft?.let { ReviewDialog(it, viewModel, onDismiss = { draft = null }) }
     if (typedDialog) TypedDialog(viewModel, onDismiss = { typedDialog = false })
+    thoughtDumpDrafts?.let { ThoughtDumpReviewDialog(it, viewModel, onDismiss = { thoughtDumpDrafts = null }) }
+}
+
+private data class ThoughtDumpItemState(
+    val formatted: FormattedCapture,
+    val title: String,
+    val content: String,
+    val accepted: Boolean
+)
+
+@Composable
+private fun ThoughtDumpReviewDialog(drafts: List<FormattedCapture>, viewModel: NotePilotViewModel, onDismiss: () -> Unit) {
+    var items by remember(drafts) {
+        mutableStateOf(drafts.map { ThoughtDumpItemState(it, it.title, it.cleanedText, accepted = true) })
+    }
+    val acceptedCount = items.count { it.accepted }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Review thought dump (${items.size} note${if (items.size == 1) "" else "s"})") },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                itemsIndexed(items) { index, entry ->
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = entry.accepted,
+                                    onCheckedChange = { checked ->
+                                        items = items.toMutableList().also { it[index] = entry.copy(accepted = checked) }
+                                    }
+                                )
+                                Text("${entry.formatted.type}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            }
+                            OutlinedTextField(
+                                value = entry.title,
+                                onValueChange = { value -> items = items.toMutableList().also { it[index] = entry.copy(title = value) } },
+                                label = { Text("Title") },
+                                enabled = entry.accepted,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = entry.content,
+                                onValueChange = { value -> items = items.toMutableList().also { it[index] = entry.copy(content = value) } },
+                                label = { Text("Note") },
+                                enabled = entry.accepted,
+                                minLines = 2,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            if (entry.formatted.detectedTags.isNotEmpty()) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    entry.formatted.detectedTags.forEach { tag ->
+                                        AssistChip(onClick = {}, label = { Text(tag) })
+                                    }
+                                }
+                            }
+                            entry.formatted.detectedDateTime?.let {
+                                Text("Due ${it.formatReminderTime()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (entry.formatted.warnings.isNotEmpty()) {
+                                Text(entry.formatted.warnings.joinToString("\n"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = acceptedCount > 0,
+                onClick = {
+                    items.filter { it.accepted }.forEach { entry ->
+                        viewModel.saveFormatted(
+                            entry.formatted,
+                            entry.title,
+                            entry.content,
+                            Section.Inbox,
+                            entry.formatted.detectedDateTime,
+                            entry.formatted.reminderDateTime
+                        )
+                    }
+                    onDismiss()
+                }
+            ) { Text("Save $acceptedCount note${if (acceptedCount == 1) "" else "s"}") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Discard all") }
+        }
+    )
 }
 
 @Composable
@@ -407,7 +524,15 @@ private fun TypedDialog(viewModel: NotePilotViewModel, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun CaptureListScreen(title: String, captures: List<CaptureEntity>, query: String, viewModel: NotePilotViewModel) {
+private fun CaptureListScreen(
+    title: String,
+    captures: List<CaptureEntity>,
+    query: String,
+    viewModel: NotePilotViewModel,
+    showWorkFilter: Boolean = false
+) {
+    var workOnly by remember { mutableStateOf(false) }
+    val visible = if (workOnly) captures.filter { it.tagList.any { tag -> tag.equals("work", ignoreCase = true) } } else captures
     LazyColumn(
         modifier = Modifier.fillMaxSize().imePadding(),
         contentPadding = PaddingValues(16.dp),
@@ -423,10 +548,21 @@ private fun CaptureListScreen(title: String, captures: List<CaptureEntity>, quer
             )
         }
         item { Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-        if (captures.isEmpty()) {
-            item { EmptyState("Nothing here", "Saved captures stay searchable and can be moved from the Inbox.") }
+        if (showWorkFilter) {
+            item {
+                FilterChip(selected = workOnly, onClick = { workOnly = !workOnly }, label = { Text("Work") })
+            }
+        }
+        if (visible.isEmpty()) {
+            item {
+                EmptyState(
+                    if (workOnly) "No work-tagged items" else "Nothing here",
+                    if (workOnly) "Items get tagged \"work\" automatically from a thought dump when they sound job-related."
+                    else "Saved captures stay searchable and can be moved from the Inbox."
+                )
+            }
         } else {
-            items(captures, key = { it.id }) { CaptureCard(it, viewModel) }
+            items(visible, key = { it.id }) { CaptureCard(it, viewModel) }
         }
     }
 }
@@ -445,8 +581,10 @@ private fun CaptureCard(capture: CaptureEntity, viewModel: NotePilotViewModel) {
                 if (capture.pinned) Icon(Icons.Default.PushPin, "Pinned")
             }
             Text(capture.cleanedContent.ifBlank { capture.rawTranscript }, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (capture.detectedDateTime != null || capture.reminderDateTime != null) {
+            val isWorkTagged = capture.tagList.any { it.equals("work", ignoreCase = true) }
+            if (capture.detectedDateTime != null || capture.reminderDateTime != null || isWorkTagged) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (isWorkTagged) AssistChip(onClick = {}, label = { Text("Work") })
                     if (capture.detectedDateTime != null) AssistChip(onClick = {}, label = { Text("Due ${capture.detectedDateTime.formatReminderTime()}") }, leadingIcon = { Icon(Icons.Default.Notifications, null) })
                     if (capture.reminderDateTime != null) AssistChip(onClick = {}, label = { Text("Alert ${capture.reminderDateTime.formatReminderTime()}") })
                 }
@@ -516,6 +654,8 @@ private fun EditCaptureDialog(capture: CaptureEntity, viewModel: NotePilotViewMo
 
 @Composable
 private fun SettingsScreen(state: NotePilotState, viewModel: NotePilotViewModel) {
+    var apiKeyDraft by remember(state.settings.anthropicApiKey) { mutableStateOf(state.settings.anthropicApiKey) }
+    var showApiKey by remember { mutableStateOf(false) }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { SettingsRow("Dark mode", state.settings.darkMode) { viewModel.setDarkMode(it) } }
         item { SettingsRow("Keep screen on during capture", state.settings.keepScreenOnCapture) { viewModel.setKeepScreenOnCapture(it) } }
@@ -524,6 +664,41 @@ private fun SettingsScreen(state: NotePilotState, viewModel: NotePilotViewModel)
             ElevatedButton(onClick = { viewModel.testNotification() }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Notifications, null)
                 Text(" Test notification")
+            }
+        }
+        item {
+            Card {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("AI-powered thought dump", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Optional. When on, a longer voice dump can be split into several organized notes " +
+                            "using the Anthropic API instead of NotePilot's local rules. Requires your own API " +
+                            "key and a network connection; without one, thought dumps still work using the " +
+                            "same local, offline rules as every other capture.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SettingsRow("Enable AI-powered thought dump", state.settings.aiThoughtDumpEnabled) {
+                        viewModel.setAiThoughtDumpEnabled(it)
+                    }
+                    OutlinedTextField(
+                        value = apiKeyDraft,
+                        onValueChange = { apiKeyDraft = it },
+                        label = { Text("Anthropic API key") },
+                        singleLine = true,
+                        visualTransformation = if (showApiKey) androidx.compose.ui.text.input.VisualTransformation.None
+                            else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        trailingIcon = {
+                            TextButton(onClick = { showApiKey = !showApiKey }) { Text(if (showApiKey) "Hide" else "Show") }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = { viewModel.setAnthropicApiKey(apiKeyDraft) },
+                        enabled = apiKeyDraft != state.settings.anthropicApiKey,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Save key") }
+                }
             }
         }
         item {

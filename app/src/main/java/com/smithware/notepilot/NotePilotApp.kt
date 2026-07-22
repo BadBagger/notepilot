@@ -4,6 +4,7 @@ import android.app.Application
 import com.smithware.notepilot.data.NotePilotDatabase
 import com.smithware.notepilot.data.NotePilotRepository
 import com.smithware.notepilot.data.SettingsStore
+import com.smithware.notepilot.format.CloudAiFormatter
 import com.smithware.notepilot.format.LocalRuleBasedFormatter
 import com.smithware.notepilot.notifications.ReminderScheduler
 
@@ -12,5 +13,6 @@ class NotePilotApp : Application() {
     val repository by lazy { NotePilotRepository(database.dao()) }
     val settingsStore by lazy { SettingsStore(this) }
     val formatter by lazy { LocalRuleBasedFormatter() }
+    val cloudAiFormatter by lazy { CloudAiFormatter() }
     val reminderScheduler by lazy { ReminderScheduler(this) }
 }

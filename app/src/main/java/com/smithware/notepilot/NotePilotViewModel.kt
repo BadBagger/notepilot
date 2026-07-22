@@ -12,14 +12,17 @@ import com.smithware.notepilot.data.NotePilotRepository
 import com.smithware.notepilot.data.Section
 import com.smithware.notepilot.data.SettingsStore
 import com.smithware.notepilot.data.toEntity
+import com.smithware.notepilot.format.CloudAiFormatterException
 import com.smithware.notepilot.format.FormatContext
 import com.smithware.notepilot.format.LocalRuleBasedFormatter
 import com.smithware.notepilot.notifications.ReminderScheduler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class NotePilotState(
     val captures: List<CaptureEntity> = emptyList(),
@@ -56,6 +59,32 @@ class NotePilotViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun format(raw: String): FormattedCapture = formatter.formatTranscript(raw, FormatContext())
     fun setQuery(value: String) { queryFlow.value = value }
+
+    /**
+     * Splits one longer "thought dump" transcript into several proposed
+     * captures. Uses the cloud AI formatter when the user opted in and set
+     * an API key; otherwise (and on any AI failure) falls back to the local
+     * rule-based formatter, which still returns something -- just as one
+     * note covering the whole transcript instead of several.
+     */
+    suspend fun formatThoughtDump(raw: String): List<FormattedCapture> {
+        val settings = state.value.settings
+        if (settings.aiThoughtDumpEnabled && settings.anthropicApiKey.isNotBlank()) {
+            try {
+                return withContext(Dispatchers.IO) {
+                    app.cloudAiFormatter.formatThoughtDump(raw, settings.anthropicApiKey)
+                }
+            } catch (e: CloudAiFormatterException) {
+                val fallback = formatter.formatTranscript(raw, FormatContext())
+                return listOf(
+                    fallback.copy(
+                        warnings = fallback.warnings + "AI thought-dump failed (${e.message ?: "unknown error"}); used local rules instead."
+                    )
+                )
+            }
+        }
+        return listOf(formatter.formatTranscript(raw, FormatContext()))
+    }
 
     fun saveFormatted(formatted: FormattedCapture, title: String, content: String, section: Section, dueAt: Long?, reminderAt: Long?) {
         viewModelScope.launch {
@@ -113,5 +142,7 @@ class NotePilotViewModel(application: Application) : AndroidViewModel(applicatio
     fun setDarkMode(value: Boolean) = viewModelScope.launch { settingsStore.setDarkMode(value) }
     fun setKeepScreenOnCapture(value: Boolean) = viewModelScope.launch { settingsStore.setKeepScreenOnCapture(value) }
     fun saveDraftTranscript(value: String) = viewModelScope.launch { settingsStore.saveDraftTranscript(value) }
+    fun setAiThoughtDumpEnabled(value: Boolean) = viewModelScope.launch { settingsStore.setAiThoughtDumpEnabled(value) }
+    fun setAnthropicApiKey(value: String) = viewModelScope.launch { settingsStore.setAnthropicApiKey(value) }
     fun testNotification() = reminders.showTestNotification()
 }
