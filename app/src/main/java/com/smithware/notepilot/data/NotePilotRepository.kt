@@ -13,6 +13,6 @@ class NotePilotRepository(private val dao: NotePilotDao) {
     suspend fun pin(capture: CaptureEntity) = dao.pin(capture.id, !capture.pinned)
     suspend fun complete(capture: CaptureEntity) = dao.complete(capture.id, !capture.completed)
     suspend fun markReminderScheduled(id: String) = dao.markReminderScheduled(id)
-    suspend fun update(capture: CaptureEntity, title: String, content: String, type: CaptureType, items: List<String>) =
-        dao.updateContent(capture.id, title, content, type, items.joinToString("|"))
+    suspend fun update(capture: CaptureEntity, title: String, content: String, type: CaptureType, items: List<String>, category: String = capture.category) =
+        dao.updateContent(capture.id, title, content, type, items.joinToString("|"), category)
 }

@@ -8,7 +8,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [CaptureEntity::class], version = 2, exportSchema = false)
+@Database(entities = [CaptureEntity::class], version = 3, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class NotePilotDatabase : RoomDatabase() {
     abstract fun dao(): NotePilotDao
@@ -22,12 +22,18 @@ abstract class NotePilotDatabase : RoomDatabase() {
                     context.applicationContext,
                     NotePilotDatabase::class.java,
                     "notepilot.db"
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE captures ADD COLUMN reminderDateTime INTEGER")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE captures ADD COLUMN category TEXT NOT NULL DEFAULT ''")
             }
         }
     }

@@ -95,6 +95,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.smithware.notepilot.data.AiProvider
 import com.smithware.notepilot.data.CaptureEntity
 import com.smithware.notepilot.data.CaptureType
 import com.smithware.notepilot.data.FormattedCapture
@@ -163,8 +164,8 @@ fun NotePilotRoot(viewModel: NotePilotViewModel = viewModel()) {
             Surface(Modifier.fillMaxSize().padding(padding)) {
                 when (screen) {
                     Screen.Capture -> CaptureScreen(state, viewModel, snackbar)
-                    Screen.Inbox -> CaptureListScreen("Inbox", state.filtered.filter { it.section == Section.Inbox && !it.archived }, state.query, viewModel, showWorkFilter = true)
-                    Screen.Notes -> CaptureListScreen("Notes", state.filtered.filter { it.section == Section.Notes || it.type in setOf(CaptureType.PlainNote, CaptureType.IdeaNote) && !it.archived }, state.query, viewModel, showWorkFilter = true)
+                    Screen.Inbox -> CaptureListScreen("Inbox", state.filtered.filter { it.section == Section.Inbox && !it.archived }, state.query, viewModel, showCategoryFilter = true)
+                    Screen.Notes -> CaptureListScreen("Notes", state.filtered.filter { it.section == Section.Notes || it.type in setOf(CaptureType.PlainNote, CaptureType.IdeaNote) && !it.archived }, state.query, viewModel, showCategoryFilter = true)
                     Screen.Tasks -> CaptureListScreen("Tasks", state.filtered.filter { it.type in setOf(CaptureType.TodoList, CaptureType.ReminderDraft) && !it.archived }, state.query, viewModel)
                     Screen.Lists -> CaptureListScreen("Lists", state.filtered.filter { it.type in setOf(CaptureType.Checklist, CaptureType.ShoppingList) && !it.archived }, state.query, viewModel)
                     Screen.Archive -> CaptureListScreen("Archive", state.filtered.filter { it.archived || it.section == Section.Archive }, state.query, viewModel)
@@ -529,10 +530,17 @@ private fun CaptureListScreen(
     captures: List<CaptureEntity>,
     query: String,
     viewModel: NotePilotViewModel,
-    showWorkFilter: Boolean = false
+    showCategoryFilter: Boolean = false
 ) {
-    var workOnly by remember { mutableStateOf(false) }
-    val visible = if (workOnly) captures.filter { it.tagList.any { tag -> tag.equals("work", ignoreCase = true) } } else captures
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    // Categories are whatever the AI thought-dump actually assigned -- not a fixed list -- so the
+    // filter row is built from what's really present in this screen's captures, same idea as the
+    // family-group filter chips elsewhere in this app family. Falls back to no filter row at all
+    // when nothing here has a category yet (e.g. before AI thought-dump was ever used).
+    val categories = remember(captures) { captures.map { it.category }.filter { it.isNotBlank() }.distinct().sorted() }
+    if (selectedCategory != null && selectedCategory !in categories) selectedCategory = null
+    val visible = selectedCategory?.let { cat -> captures.filter { it.category.equals(cat, ignoreCase = true) } } ?: captures
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().imePadding(),
         contentPadding = PaddingValues(16.dp),
@@ -548,16 +556,21 @@ private fun CaptureListScreen(
             )
         }
         item { Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-        if (showWorkFilter) {
+        if (showCategoryFilter && categories.isNotEmpty()) {
             item {
-                FilterChip(selected = workOnly, onClick = { workOnly = !workOnly }, label = { Text("Work") })
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = selectedCategory == null, onClick = { selectedCategory = null }, label = { Text("All") })
+                    categories.forEach { cat ->
+                        FilterChip(selected = selectedCategory == cat, onClick = { selectedCategory = cat }, label = { Text(cat) })
+                    }
+                }
             }
         }
         if (visible.isEmpty()) {
             item {
                 EmptyState(
-                    if (workOnly) "No work-tagged items" else "Nothing here",
-                    if (workOnly) "Items get tagged \"work\" automatically from a thought dump when they sound job-related."
+                    if (selectedCategory != null) "Nothing in \"$selectedCategory\"" else "Nothing here",
+                    if (selectedCategory != null) "Items get a category automatically from AI thought-dump based on what they're actually about."
                     else "Saved captures stay searchable and can be moved from the Inbox."
                 )
             }
@@ -581,10 +594,9 @@ private fun CaptureCard(capture: CaptureEntity, viewModel: NotePilotViewModel) {
                 if (capture.pinned) Icon(Icons.Default.PushPin, "Pinned")
             }
             Text(capture.cleanedContent.ifBlank { capture.rawTranscript }, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val isWorkTagged = capture.tagList.any { it.equals("work", ignoreCase = true) }
-            if (capture.detectedDateTime != null || capture.reminderDateTime != null || isWorkTagged) {
+            if (capture.detectedDateTime != null || capture.reminderDateTime != null || capture.category.isNotBlank()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    if (isWorkTagged) AssistChip(onClick = {}, label = { Text("Work") })
+                    if (capture.category.isNotBlank()) AssistChip(onClick = {}, label = { Text(capture.category) })
                     if (capture.detectedDateTime != null) AssistChip(onClick = {}, label = { Text("Due ${capture.detectedDateTime.formatReminderTime()}") }, leadingIcon = { Icon(Icons.Default.Notifications, null) })
                     if (capture.reminderDateTime != null) AssistChip(onClick = {}, label = { Text("Alert ${capture.reminderDateTime.formatReminderTime()}") })
                 }
@@ -623,6 +635,7 @@ private fun EditCaptureDialog(capture: CaptureEntity, viewModel: NotePilotViewMo
     var title by remember(capture.id) { mutableStateOf(capture.title) }
     var content by remember(capture.id) { mutableStateOf(capture.cleanedContent) }
     var type by remember(capture.id) { mutableStateOf(capture.type) }
+    var category by remember(capture.id) { mutableStateOf(capture.category) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit note") },
@@ -638,13 +651,26 @@ private fun EditCaptureDialog(capture: CaptureEntity, viewModel: NotePilotViewMo
                     }
                 }
                 item {
+                    // Free text rather than a fixed dropdown -- AI-assigned categories are open-ended
+                    // by design (see CloudAiFormatter's prompt), so correcting a wrong one shouldn't be
+                    // limited to a hardcoded list either.
+                    OutlinedTextField(
+                        category,
+                        { category = it },
+                        label = { Text("Category") },
+                        placeholder = { Text("e.g. Work, App Ideas, Personal") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                item {
                     Text("Raw transcript is preserved", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },
         confirmButton = {
             Button(onClick = {
-                viewModel.updateCapture(capture, title, content, type)
+                viewModel.updateCapture(capture, title, content, type, category)
                 onDismiss()
             }) { Text("Save changes") }
         },
@@ -654,7 +680,11 @@ private fun EditCaptureDialog(capture: CaptureEntity, viewModel: NotePilotViewMo
 
 @Composable
 private fun SettingsScreen(state: NotePilotState, viewModel: NotePilotViewModel) {
-    var apiKeyDraft by remember(state.settings.anthropicApiKey) { mutableStateOf(state.settings.anthropicApiKey) }
+    val provider = state.settings.aiProvider
+    val savedKeyForProvider = if (provider == AiProvider.OPENAI) state.settings.openAiApiKey else state.settings.anthropicApiKey
+    // Keyed on the provider too, not just the saved value -- switching providers must show
+    // that provider's own saved key (or blank) instead of leftover draft text from the other.
+    var apiKeyDraft by remember(provider, savedKeyForProvider) { mutableStateOf(savedKeyForProvider) }
     var showApiKey by remember { mutableStateOf(false) }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { SettingsRow("Dark mode", state.settings.darkMode) { viewModel.setDarkMode(it) } }
@@ -671,20 +701,33 @@ private fun SettingsScreen(state: NotePilotState, viewModel: NotePilotViewModel)
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("AI-powered thought dump", fontWeight = FontWeight.Bold)
                     Text(
-                        "Optional. When on, a longer voice dump can be split into several organized notes " +
-                            "using the Anthropic API instead of NotePilot's local rules. Requires your own API " +
-                            "key and a network connection; without one, thought dumps still work using the " +
-                            "same local, offline rules as every other capture.",
+                        "Optional. When on, a longer voice dump can be split into several organized notes -- " +
+                            "each tagged with a topic category based on what it's actually about -- using " +
+                            "either OpenAI or Anthropic, whichever you set up below. Requires your own API key " +
+                            "and a network connection; without one, thought dumps still work using the same " +
+                            "local, offline rules as every other capture.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     SettingsRow("Enable AI-powered thought dump", state.settings.aiThoughtDumpEnabled) {
                         viewModel.setAiThoughtDumpEnabled(it)
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = provider == AiProvider.OPENAI,
+                            onClick = { viewModel.setAiProvider(AiProvider.OPENAI) },
+                            label = { Text("OpenAI") }
+                        )
+                        FilterChip(
+                            selected = provider == AiProvider.ANTHROPIC,
+                            onClick = { viewModel.setAiProvider(AiProvider.ANTHROPIC) },
+                            label = { Text("Anthropic (Claude)") }
+                        )
+                    }
                     OutlinedTextField(
                         value = apiKeyDraft,
                         onValueChange = { apiKeyDraft = it },
-                        label = { Text("Anthropic API key") },
+                        label = { Text(if (provider == AiProvider.OPENAI) "OpenAI API key" else "Anthropic API key") },
                         singleLine = true,
                         visualTransformation = if (showApiKey) androidx.compose.ui.text.input.VisualTransformation.None
                             else androidx.compose.ui.text.input.PasswordVisualTransformation(),
@@ -694,10 +737,23 @@ private fun SettingsScreen(state: NotePilotState, viewModel: NotePilotViewModel)
                         modifier = Modifier.fillMaxWidth()
                     )
                     Button(
-                        onClick = { viewModel.setAnthropicApiKey(apiKeyDraft) },
-                        enabled = apiKeyDraft != state.settings.anthropicApiKey,
+                        onClick = {
+                            if (provider == AiProvider.OPENAI) viewModel.setOpenAiApiKey(apiKeyDraft)
+                            else viewModel.setAnthropicApiKey(apiKeyDraft)
+                        },
+                        enabled = apiKeyDraft != savedKeyForProvider,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Save key") }
+                    if (provider == AiProvider.OPENAI && state.settings.anthropicApiKey.isNotBlank() ||
+                        provider == AiProvider.ANTHROPIC && state.settings.openAiApiKey.isNotBlank()
+                    ) {
+                        Text(
+                            "A key is also saved for the other provider -- it'll be used automatically as a " +
+                                "backup if ${provider.name.lowercase().replaceFirstChar { it.uppercase() }} fails.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

@@ -19,6 +19,7 @@ data class CaptureEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val tags: String = "",
+    val category: String = "",
     val checklistItems: String = "",
     val pinned: Boolean = false,
     val archived: Boolean = false,
@@ -42,7 +43,12 @@ data class FormattedCapture(
     val detectedTags: List<String> = emptyList(),
     val confidenceScore: Float = 0.5f,
     val rawTranscript: String,
-    val warnings: List<String> = emptyList()
+    val warnings: List<String> = emptyList(),
+    // Appended after the original positional parameters (rather than inserted where it
+    // conceptually belongs, next to detectedTags) so existing positional-argument call
+    // sites -- e.g. LocalRuleBasedFormatter's FormattedCapture(title, type, cleaned, ...)
+    // -- don't silently shift onto the wrong parameter. Always pass this one by name.
+    val category: String = ""
 )
 
 fun FormattedCapture.toEntity(
@@ -59,6 +65,7 @@ fun FormattedCapture.toEntity(
     type = type,
     section = section,
     tags = detectedTags.joinToString("|"),
+    category = category,
     checklistItems = checklistItems.joinToString("|"),
     source = source,
     detectedDateTime = dueOverride,

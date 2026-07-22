@@ -30,8 +30,8 @@ interface NotePilotDao {
     @Query("UPDATE captures SET completed = :completed, updatedAt = :now WHERE id = :id")
     suspend fun complete(id: String, completed: Boolean, now: Long = System.currentTimeMillis())
 
-    @Query("UPDATE captures SET title = :title, cleanedContent = :content, type = :type, checklistItems = :items, updatedAt = :now WHERE id = :id")
-    suspend fun updateContent(id: String, title: String, content: String, type: CaptureType, items: String, now: Long = System.currentTimeMillis())
+    @Query("UPDATE captures SET title = :title, cleanedContent = :content, type = :type, checklistItems = :items, category = :category, updatedAt = :now WHERE id = :id")
+    suspend fun updateContent(id: String, title: String, content: String, type: CaptureType, items: String, category: String, now: Long = System.currentTimeMillis())
 
     @Query("UPDATE captures SET reminderScheduled = 1, updatedAt = :now WHERE id = :id")
     suspend fun markReminderScheduled(id: String, now: Long = System.currentTimeMillis())
